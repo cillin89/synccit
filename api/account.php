@@ -26,7 +26,7 @@ if(isset($_POST['data'])) {
         $_REQUEST['type'] = "xml";
     }
 
-    if(strtolower($_REQUEST['type']) == "xml") {
+    if(strtolower($_REQUEST['type'] ?? "") == "xml") {
         // afaik SimpleXML loves throwing actual errors instead of suppressing pretty much everything
         // put it in try catch to try to get rid of that
         try {
@@ -35,11 +35,16 @@ if(isset($_POST['data'])) {
             // if you're having issues with xml formatting, remove the @
             // also printing Exception $e in the catch will help
             @$xml = new SimpleXMLElement($_POST["data"]);
-            $username   = $xml -> username;
-            $auth       = $xml -> auth;
-            $mode       = $xml -> mode;
-            $developer  = isset($xml -> dev) ? $xml -> dev : "unknown";
+            // cast to string: a missing child is null, and passing that on to
+            // real_escape_string is deprecated
+            $username   = (string)($xml -> username);
+            // the account api authenticates with a login token, not the auth code
+            // the standard api uses
+            $login      = (string)($xml -> login);
+            $mode       = (string)($xml -> mode);
+            $developer  = isset($xml -> dev) ? (string)($xml -> dev) : "unknown";
 
+            // create is the only mode that acts before a login token exists
             if($mode == "create") {
                 $password   = $xml -> password;
                 $email      = $xml -> email;
@@ -51,13 +56,19 @@ if(isset($_POST['data'])) {
                 } else {
                     xerror($r, "xml");
                 }
+            }
 
 
-            } else if($mode == "addauth") {
-                $password   = $xml -> password;
-                $device     = $xml -> device;
+            // everything below mints or reads account state, so prove identity
+            // first. checkAuth exits with "not authorized" if the token is bad
+            $authinfo = checkAuth($username, $login, "xml");
 
-                $r = addAuth($username, $password, $device, $developer);
+            if($mode == "addauth") {
+                $device = $xml -> device;
+
+                // addAuth trusts its caller to have authenticated, so it takes
+                // the userid checkAuth resolved. never pass a password here
+                $r = addAuth($username, $authinfo["userid"], $device, $developer);
 
                 if($r["success"] == "" ) {
                     xerror($r["error"], "xml");
@@ -66,43 +77,8 @@ if(isset($_POST['data'])) {
                 }
             }
 
-
-            $authinfo = checkAuth($username, $auth, "xml");
-
-            if($mode == "update") {
-                $updates = array();
-                foreach($xml -> links -> link as $link) {
-                    // This part was a little tricky
-                    // While $link->id seems like it might be a string, it's actually a SimpleXMLElement (should've print_r from the beginning)
-                    // You can't use an object as an array index
-                    // Putting "". in front of it makes $id a string
-                    // Simple when you think about it. Annoying when it just gives you some weird error
-                    $id = "".$link -> id;
-
-                    if(isset($link -> comments) && $link -> comments > -1) {
-                        $updates[$id]["comment"] = $link -> comments;
-                        if($link -> both == true || $link -> both == "true" || $link -> both == 1) {
-                            $updates[$id]["link"] = 1;
-                        }
-                    } else {
-                        $updates[$id]["link"] = 1;
-                    }
-                }
-
-                insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
-
-                xsuccess(count($updates)." links updated", "xml");
-            } else {
-                $links = array();
-                $i = 0;
-                foreach($xml -> links -> link as $link) {
-                    $links[$i++] = "".$link -> id; // convert simplexml to string. not that important here though
-                }
-                $result = readLinks($links, $authinfo["userid"], "xml");
-                echo $result;
-                die;
-
-            }
+            // login/delete/history/devices are json only
+            xerror("invalid mode", "xml");
 
 
         } catch (Exception $e){
@@ -117,16 +93,21 @@ if(isset($_POST['data'])) {
             xerror("json error ".json_last_error(), "json");
         }
 
+        if(!isset($json["username"], $json["mode"])) {
+            xerror("missing username or mode", "json");
+        }
+
         $username   = $json["username"]; // still requires username
-        $login      = $json["login"]; // no more auth, now login token
+        // login token is not sent for create/login; those exit before checkAuth
+        $login      = $json["login"] ?? ""; // no more auth, now login token
         $mode       = $json["mode"]; // still requres mode
         $developer  = isset($json["dev"]) ? $json["dev"] : "unknown";
         // dev auth will probably be required for account management
 
         // yay, the same
         if($mode == "create") {
-            $password   = $json["password"];
-            $email      = $json["email"];
+            $password   = $json["password"] ?? "";
+            $email      = $json["email"] ?? "";
 
             $r = createAccount($username, $password, $email, $developer);
 
@@ -139,7 +120,7 @@ if(isset($_POST['data'])) {
             // this will be really close to addauth
             // basically want loginhash, not authcode
             // login hash will be longer than auth hash. users aren't having to enter it
-            $password = $json["password"];
+            $password = $json["password"] ?? "";
             $r = addLogin($username, $password, $developer);
 
             if($r["success"] == "" ) {
@@ -155,18 +136,22 @@ if(isset($_POST['data'])) {
         $authinfo = checkAuth($username, $login, "json");
 
         if($mode == "delete") {
+            // missing devices is not an error; deleteAuth no-ops on an empty list
+            $jsondevices = (isset($json["devices"]) && is_array($json["devices"])) ? $json["devices"] : array();
             $updates = array();
-            foreach($json["devices"] as $link) {
+            $i = 0;
+            foreach($jsondevices as $link) {
+                if(!isset($link["id"])) {
+                    continue;
+                }
                 $updates[$i++] = $link["id"];
 
             }
 
-            //insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
-
             deleteAuth($updates, $authinfo["userid"], $username);
 
 
-            xsuccess(count($updates)." links updated", "json");
+            xsuccess(count($updates)." devices deleted", "json");
 
         } else if ($mode == "history") {
 
@@ -179,7 +164,7 @@ if(isset($_POST['data'])) {
             die;
         } else if($mode == "addauth") {
 
-            $device = $json["device"];
+            $device = $json["device"] ?? "";
 
             $r = addAuth($username, $authinfo["userid"], $device, $developer);
 
@@ -244,99 +229,6 @@ function checkAuth($username, $auth, $mode=false) {
 
     } else {
         xerror("not authorized", $mode);
-    }
-}
-
-// SQL everywhere. it's not pretty
-// basic logic is try to insert
-// if fails, then update row
-function insertLinks($updates, $developer, $user, $devicename) {
-    global $mysql;
-    //var_dump($updates);
-    // just realized foreach can do keys. should change it
-    while($current = current($updates)) {
-        $linkid = key($updates);
-        if(strlen($linkid) == 6) { // seems a blank link can get added and causes some trouble
-
-            //$commentcount = $current['comment'] != NULL ? $current['commment'] : "-1";
-            if($current['comment'] != NULL) {
-                $commentcount = $current['comment'];
-                $commenttime = time();
-            } else {
-                $commentcount = "-1";
-                $commenttime = 0;
-            }
-            $linktime = ($current['link'] ?? 0) == 1 ? time() : 0;
-
-
-            $sql = "
-                INSERT INTO `links`
-                (
-                  `id`,
-                  `linkid`,
-                  `userid`,
-                  `lastvisit`,
-                  `lastcommenttime`,
-                  `lastcommentcount`,
-                  `firstvisit`,
-                  `lastcall`,
-                  `developers`
-                ) VALUES (
-                  NULL,
-                  '".$mysql->real_escape_string($linkid)."',
-                  '".$mysql->real_escape_string($user)."',
-                  '".$mysql->real_escape_string($linktime)."',
-                  '".$mysql->real_escape_string($commenttime)."',
-                  '".$mysql->real_escape_string($commentcount)."',
-                  '".$mysql->real_escape_string($linktime)."',
-                  '".$mysql->real_escape_string($devicename)."',
-                  '".$mysql->real_escape_string($developer)."'
-                )";
-            try {
-                $res = $mysql->query($sql);
-            } catch (mysqli_sql_exception $e) {
-                $res = false;
-            }
-            if(!$res) {
-
-                $sql = "
-                UPDATE `links`
-                    SET
-                ";
-                if($commentcount != "-1") {
-                    $sql .= "
-                    `lastcommentcount`  = IF(`lastcommentcount` > '".$mysql->real_escape_string($commentcount)."', `lastcommentcount`, '".$mysql->real_escape_string($commentcount)."'),
-                    `lastcommenttime`   = '".$mysql->real_escape_string($commenttime)."',
-                    ";
-                }
-                if($linktime != 0) {
-                    $sql .= "
-                    `lastvisit` = '".$mysql->real_escape_string($linktime)."',
-                    `firstvisit` = IF (`firstvisit` = 0, '".$mysql->real_escape_string($linktime)."', `firstvisit`),
-                    ";
-                }
-                $sql .= "
-                    `lastcall` = '".$mysql->real_escape_string($devicename)."',
-                    `developers` = IF(FIND_IN_SET('".$mysql->real_escape_string($developer)."', `developers`), `developers`, CONCAT_WS(',', NULLIF(`developers`, ''), '".$mysql->real_escape_string($developer)."'))
-
-                    WHERE
-                        `linkid` = '".$mysql->real_escape_string($linkid)."'
-                    AND
-                        `userid` = '".$mysql->real_escape_string($user)."'
-
-                    LIMIT 1
-                ";
-                try {
-                    $res = $mysql->query($sql);
-                } catch (mysqli_sql_exception $e) {
-                    error_log("insertLinks UPDATE failed for linkid {$linkid}: ".$e->getMessage());
-                    $res = false;
-                }
-                //var_dump($res);
-            }
-            //var_dump($res);
-        }
-        next($updates);
     }
 }
 

@@ -19,9 +19,9 @@ $email = "";
 
 if(isset($_POST['create'])) {
 
-    $username = htmlspecialchars($_POST['username']);
-    $email = htmlspecialchars($_POST['email']);
-    $password = $_POST['password'];
+    $username = htmlspecialchars($_POST['username'] ?? "");
+    $email = htmlspecialchars($_POST['email'] ?? "");
+    $password = $_POST['password'] ?? "";
 
     if(count(explode("@", $email)) != 2 && !empty($email)) {
         $error = "email not valid"; // meh. emails aren't required so only check if @ exists
@@ -39,7 +39,7 @@ if(isset($_POST['create'])) {
         $error = "username must consist of letters, numbers, or underscores";
     }
 
-    if(strcmp($password, $_POST['passwordconfirm'])) {
+    if(strcmp($password, $_POST['passwordconfirm'] ?? "")) {
         $error = "passwords do not match";
     }
     

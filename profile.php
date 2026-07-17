@@ -26,9 +26,9 @@ if($loggedin) {
 
 $error = "";
 
-if(isset($_POST['do']) && $_POST['do'] == "edit" && $_POST['hash'] == $hash) {
-    $email = $_POST['email'];
-    $oldpass = $_POST['oldpassword'];
+if(isset($_POST['do']) && $_POST['do'] == "edit" && ($_POST['hash'] ?? "") == $hash) {
+    $email = $_POST['email'] ?? "";
+    $oldpass = $_POST['oldpassword'] ?? "";
 
     $hashset = "sha512:10000:".$user->salt.":".$user->passhash;
 
@@ -38,7 +38,7 @@ if(isset($_POST['do']) && $_POST['do'] == "edit" && $_POST['hash'] == $hash) {
         $addsql = "";
 
 
-        if(isset($_POST['password']) && $_POST['password'] != "" && $_POST['password'] == $_POST['passwordconfirm']) {
+        if(isset($_POST['password']) && $_POST['password'] != "" && $_POST['password'] == ($_POST['passwordconfirm'] ?? "")) {
             $hashset = create_hash($_POST['password']);
             $pieces = explode(":", $hashset);
             $salt = $pieces[2];

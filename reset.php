@@ -13,8 +13,8 @@ if(!isset($_SESSION['temphash'])) {
 $error = "";
 $hideform = 0;
 
-if($_POST['reset'] == "reset") {
-    if($_POST['hash'] != $_SESSION['temphash']) {
+if(isset($_POST['reset']) && $_POST['reset'] == "reset") {
+    if(($_POST['hash'] ?? "") != $_SESSION['temphash']) {
         $error = "there was an error. retry";
     // check if it's a valid-ish email. it's not nothing. and it at least contains an @
     } else if(isset($_POST['email']) && $_POST['email'] != "" && count(explode("@", $_POST['email'])) == 2) {

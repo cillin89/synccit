@@ -31,7 +31,7 @@ if(isset($_REQUEST['do']) && isset($_REQUEST['code']) && $_REQUEST['do'] == "rem
     $code = $_REQUEST['code'];
 
 
-    if(strcmp($hash, $_GET['hash']) == 0) {
+    if(strcmp($hash, $_GET['hash'] ?? "") == 0) {
 
         $sql = "DELETE FROM `authcodes`
             WHERE

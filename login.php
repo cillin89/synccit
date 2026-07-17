@@ -18,10 +18,10 @@ $username = "";
 
 if(isset($_POST['login'])) {
 
-	$username = htmlspecialchars($_POST['username']);
+	$username = htmlspecialchars($_POST['username'] ?? "");
 
 	// check username validity
-	$password = $_POST['password'];
+	$password = $_POST['password'] ?? "";
 
 	$userinfo = $mysql->query("SELECT * FROM `user` WHERE `username` = '".$mysql->real_escape_string($username)."' LIMIT 1");
 

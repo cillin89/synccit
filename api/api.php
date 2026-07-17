@@ -27,7 +27,7 @@ if(isset($_POST['data'])) {
         $_REQUEST['type'] = "xml";
     }
 
-    if(strtolower($_REQUEST['type']) == "xml") {
+    if(strtolower($_REQUEST['type'] ?? "") == "xml") {
         // afaik SimpleXML loves throwing actual errors instead of suppressing pretty much everything
         // put it in try catch to try to get rid of that
         try {
@@ -39,10 +39,12 @@ if(isset($_POST['data'])) {
             // send correct content-type header
             header("Content-type: application/rss+xml");
             @$xml = new SimpleXMLElement($_POST["data"]);
-            $username   = $xml -> username;
-            $auth       = $xml -> auth;
-            $mode       = $xml -> mode;
-            $developer  = isset($xml -> dev) ? $xml -> dev : "unknown";
+            // cast to string: a missing child is null, and passing that on to
+            // real_escape_string is deprecated
+            $username   = (string)($xml -> username);
+            $auth       = (string)($xml -> auth);
+            $mode       = (string)($xml -> mode);
+            $developer  = isset($xml -> dev) ? (string)($xml -> dev) : "unknown";
 
             if($mode == "create") {
                 $password   = $xml -> password;
@@ -93,9 +95,9 @@ if(isset($_POST['data'])) {
                     }
                 }
 
-                insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
+                $written = insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
 
-                xsuccess(count($updates)." links updated", "xml");
+                xsuccess($written." links updated", "xml");
             } else if($mode == "history") {
                 $count      = $xml -> offset;
                 $time       = $xml -> time;
@@ -127,16 +129,21 @@ if(isset($_POST['data'])) {
             xerror("json error ".json_last_error(), "json");
         }
 
+        if(!isset($json["username"], $json["mode"])) {
+            xerror("missing username or mode", "json");
+        }
+
         $username   = $json["username"];
-        $auth       = $json["auth"];
+        // auth is not sent for create/addauth; those exit before checkAuth
+        $auth       = $json["auth"] ?? "";
         $mode       = $json["mode"];
         $developer  = isset($json["dev"]) ? $json["dev"] : "unknown";
 
 
 
         if($mode == "create") {
-            $password   = $json["password"];
-            $email      = $json["email"];
+            $password   = $json["password"] ?? "";
+            $email      = $json["email"] ?? "";
 
             $r = createAccount($username, $password, $email, $developer);
 
@@ -148,8 +155,8 @@ if(isset($_POST['data'])) {
 
 
         } else if($mode == "addauth") {
-            $password = $json["password"];
-            $device = $json["device"];
+            $password = $json["password"] ?? "";
+            $device = $json["device"] ?? "";
 
             $r = addAuth($username, $password, $device, $developer);
 
@@ -163,8 +170,14 @@ if(isset($_POST['data'])) {
         $authinfo = checkAuth($username, $auth, "json");
 
         if($mode == "update") {
+            // missing links is not an error: an empty sync reports 0 updated,
+            // same as the xml branch
+            $jsonlinks = (isset($json["links"]) && is_array($json["links"])) ? $json["links"] : array();
             $updates = array();
-            foreach($json["links"] as $link) {
+            foreach($jsonlinks as $link) {
+                if(!isset($link["id"])) {
+                    continue;
+                }
                 $id = $link["id"];
                 if(isset($link["comments"]) && $link["comments"] > -1) {
                     $updates[$id]["comment"] = $link["comments"];
@@ -178,20 +191,25 @@ if(isset($_POST['data'])) {
 
             }
 
-            insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
+            $written = insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
 
-            xsuccess(count($updates)." links updated", "json");
+            xsuccess($written." links updated", "json");
 
         } else if($mode == "history") {
-            $count      = $json["offset"];
-            $time       = $json["time"];
+            $count      = $json["offset"] ?? 0;
+            $time       = $json["time"] ?? 0;
             $result = historyLinks($authinfo["userid"], "json", $count, $time);
             echo $result;
             die;
         } else {
+            // readLinks errors with "no links requested" when nothing survives
+            $jsonlinks = (isset($json["links"]) && is_array($json["links"])) ? $json["links"] : array();
             $links = array();
             $i = 0;
-            foreach($json["links"] as $link) {
+            foreach($jsonlinks as $link) {
+                if(!isset($link["id"])) {
+                    continue;
+                }
                 $links[$i++] = $link["id"];
             }
 
@@ -210,13 +228,18 @@ if(isset($_POST['data'])) {
 
         $authinfo = checkAuth($username, $auth);
 
-        if(isset($_POST['links']) && strpos($_POST['links'], ",") === FALSE) {
+        // missing links is not an error: an empty sync reports 0 updated
+        if(!isset($_POST['links']) || $_POST['links'] === "") {
+            $links = array();
+        } else if(strpos($_POST['links'], ",") === FALSE) {
             $links = array($_POST['links']);
         } else {
             $links = explode(",", $_POST['links']);
         }
         //var_dump($links);
-        if(isset($_POST['comments']) && strpos($_POST['comments'], ",") === FALSE) {
+        if(!isset($_POST['comments']) || $_POST['comments'] === "") {
+            $comments = array();
+        } else if(strpos($_POST['comments'], ",") === FALSE) {
             $comments = array($_POST['comments']);
         } else {
             $comments = explode(",", $_POST['comments']);
@@ -242,9 +265,9 @@ if(isset($_POST['data'])) {
 
         $developer = (isset($_POST['dev'])) ? $_POST['dev'] : "unknown";
 
-        insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
+        $written = insertLinks($updates, $developer, $authinfo["userid"], $authinfo["device"]);
 
-        xsuccess(count($updates)." links updated");
+        xsuccess($written." links updated");
 
 
     } else {
@@ -256,7 +279,10 @@ if(isset($_POST['data'])) {
 
         $authinfo = checkAuth($username, $auth);
 
-        if(strpos($_POST['links'], ",") === FALSE) {
+        // readLinks errors with "no links requested" on an empty list
+        if(!isset($_POST['links']) || $_POST['links'] === "") {
+            $links = array();
+        } else if(strpos($_POST['links'], ",") === FALSE) {
             $links = array($_POST['links']);
         } else {
             $links = explode(",", $_POST['links']);
@@ -285,11 +311,17 @@ function checkAuth($username, $auth, $mode=false) {
         WHERE
             `username` = '".$mysql->real_escape_string($username)."' AND
             `authhash` = '".$mysql->real_escape_string($auth)."' LIMIT 1";*/
-    $sql = "SELECT * FROM `authcodes`
+    // join `user` on the userid rather than trusting `authcodes`.`username`
+    // alone. every path that mints an authcode resolves a real userid first
+    // (addkey.php from the session, addAuth after validating the password), so
+    // a row whose userid doesn't belong to the named user is not a credential
+    $sql = "SELECT `authcodes`.* FROM `authcodes`, `user`
         WHERE
-            `username` = '".$mysql->real_escape_string($username)."' AND
-            `authhash` = '".$mysql->real_escape_string($auth)."' LIMIT 1";
-    
+            `user`.`username` = '".$mysql->real_escape_string($username)."' AND
+            `authcodes`.`authhash` = '".$mysql->real_escape_string($auth)."' AND
+            `user`.`id` = `authcodes`.`userid`
+        LIMIT 1";
+
 
     if($res = $mysql->query($sql)) {
         //var_dump($result);
@@ -320,8 +352,11 @@ function checkAuth($username, $auth, $mode=false) {
 // SQL everywhere. it's not pretty
 // basic logic is try to insert
 // if fails, then update row
+// returns the number of links actually written, which can be lower than
+// count($updates) since blank/short linkids are skipped below
 function insertLinks($updates, $developer, $user, $devicename) {
     global $mysql;
+    $written = 0;
     //var_dump($updates);
     // just realized foreach can do keys. should change it
     while($current = current($updates)) {
@@ -403,10 +438,14 @@ function insertLinks($updates, $developer, $user, $devicename) {
                 }
                 //var_dump($res);
             }
+            if($res) {
+                $written++;
+            }
             //var_dump($res);
         }
         next($updates);
     }
+    return $written;
 }
 
 

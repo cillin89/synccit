@@ -6,7 +6,7 @@ include("session.php");
 
 $loggedin = $session->isLoggedIn();
 
-if($_GET['l'] == $session->hash) {
+if(isset($_GET['l']) && $_GET['l'] == $session->hash) {
 
     $session->destroyPHPSession();
     header("Location: login.php");
