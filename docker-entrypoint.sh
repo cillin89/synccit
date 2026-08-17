@@ -66,4 +66,10 @@ if [ -n "${LASTIP_LEN}" ] && [ "${LASTIP_LEN}" -lt 45 ] 2>/dev/null; then
         -e "ALTER TABLE \`user\` MODIFY \`lastip\` varchar(45) DEFAULT NULL;"
 fi
 
+# Ensure only mpm_prefork is loaded at runtime
+rm -f /etc/apache2/mods-enabled/mpm_event.load \
+      /etc/apache2/mods-enabled/mpm_event.conf \
+      /etc/apache2/mods-enabled/mpm_worker.load \
+      /etc/apache2/mods-enabled/mpm_worker.conf
+
 exec apache2-foreground
