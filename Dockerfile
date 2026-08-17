@@ -11,10 +11,6 @@ COPY apache.conf /etc/apache2/conf-enabled/synccit.conf
 
 # Install mysqli extension
 RUN docker-php-ext-install mysqli
-# mod_php requires mpm_prefork; disable the default event/worker to avoid
-# "More than one MPM loaded" error
-RUN a2dismod mpm_event mpm_worker || true \
-    && a2enmod mpm_prefork
 
 # Install Composer (build-time only — not present in the final runtime layer's PATH use)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
@@ -49,11 +45,15 @@ RUN sed -ri 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
         /var/log/apache2 \
         /var/lib/php/sessions
 
+# Forcefully replace all MPM config with only prefork
+RUN find /etc/apache2/mods-enabled/ -name 'mpm_*' -delete \
+    && find /etc/apache2/mods-available/ -name 'mpm_event*' -delete \
+    && find /etc/apache2/mods-available/ -name 'mpm_worker*' -delete \
+    && ln -sf /etc/apache2/mods-available/mpm_prefork.conf /etc/apache2/mods-enabled/mpm_prefork.conf \
+    && ln -sf /etc/apache2/mods-available/mpm_prefork.load /etc/apache2/mods-enabled/mpm_prefork.load \
+    && echo "MPM mods-enabled:" \
+    && ls /etc/apache2/mods-enabled/mpm_*
+
 EXPOSE 8080
 USER www-data
 ENTRYPOINT ["/entrypoint.sh"]
-
-# Prevent mpm_event from being loaded at runtime via php module config
-RUN sed -i 's/^/#/' /etc/apache2/mods-enabled/mpm_event.conf 2>/dev/null || true \
-    && rm -f /etc/apache2/mods-enabled/mpm_event.load \
-    && rm -f /etc/apache2/mods-enabled/mpm_worker.load
