@@ -49,7 +49,11 @@ RUN sed -ri 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
 RUN rm -f /etc/apache2/mods-enabled/mpm_event.load \
           /etc/apache2/mods-enabled/mpm_event.conf \
           /etc/apache2/mods-enabled/mpm_worker.load \
-          /etc/apache2/mods-enabled/mpm_worker.conf
+          /etc/apache2/mods-enabled/mpm_worker.conf \
+          /etc/apache2/mods-available/mpm_event.load \
+          /etc/apache2/mods-available/mpm_event.conf \
+          /etc/apache2/mods-available/mpm_worker.load \
+          /etc/apache2/mods-available/mpm_worker.conf
 
 RUN cat /etc/apache2/envvars
 RUN ls -la /etc/apache2/mods-enabled/mpm_*
