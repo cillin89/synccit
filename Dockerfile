@@ -52,3 +52,8 @@ RUN sed -ri 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
 EXPOSE 8080
 USER www-data
 ENTRYPOINT ["/entrypoint.sh"]
+
+# Prevent mpm_event from being loaded at runtime via php module config
+RUN sed -i 's/^/#/' /etc/apache2/mods-enabled/mpm_event.conf 2>/dev/null || true \
+    && rm -f /etc/apache2/mods-enabled/mpm_event.load \
+    && rm -f /etc/apache2/mods-enabled/mpm_worker.load
