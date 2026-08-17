@@ -7,13 +7,14 @@ FROM php:8.2-apache-bookworm
 # Enable mod_rewrite, plus mod_remoteip so the access log and PHP see the real
 # client IP rather than the reverse proxy's (see apache.conf)
 RUN a2enmod rewrite remoteip
-# mod_php requires mpm_prefork; disable the default event/worker to avoid
-# "More than one MPM loaded" error
-RUN a2dismod mpm_event mpm_worker; a2enmod mpm_prefork
 COPY apache.conf /etc/apache2/conf-enabled/synccit.conf
 
 # Install mysqli extension
 RUN docker-php-ext-install mysqli
+# mod_php requires mpm_prefork; disable the default event/worker to avoid
+# "More than one MPM loaded" error
+RUN a2dismod mpm_event mpm_worker || true \
+    && a2enmod mpm_prefork
 
 # Install Composer (build-time only — not present in the final runtime layer's PATH use)
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
