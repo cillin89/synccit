@@ -7,6 +7,9 @@ FROM php:8.2-apache-bookworm
 # Enable mod_rewrite, plus mod_remoteip so the access log and PHP see the real
 # client IP rather than the reverse proxy's (see apache.conf)
 RUN a2enmod rewrite remoteip
+
+RUN cat /usr/local/bin/apache2-foreground
+
 COPY apache.conf /etc/apache2/conf-enabled/synccit.conf
 
 # Install mysqli extension
